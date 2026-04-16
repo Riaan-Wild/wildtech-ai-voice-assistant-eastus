@@ -5,28 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Wild Tech AI Assistant" />
   <title>Wild Tech AI Assistant — Full Screen (With Sidebar)</title>
+
+  <!-- Bot Framework Web Chat -->
   <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
+
+  <!-- Azure Speech SDK (required for continuous STT + real-time Avatar) -->
+  <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+
   <style>
     :root {
-      --wt-primary:       #2563eb;
+      --wt-primary: #2563eb;
       --wt-primary-hover: #1d4ed8;
-      --wt-secondary:     #06b6d4;
-      --wt-ink:           #0b1220;
-      --wt-ink-2:         #12244a;
-      --wt-text:          #0f172a;
-      --wt-text-muted:    #475569;
-      --wt-text-light:    #94a3b8;
-      --wt-bg:            #f6f8fc;
-      --wt-surface:       #ffffff;
-      --wt-border:        rgba(15, 23, 42, 0.10);
-      --header-height:    60px;
-      --sidebar-width:    280px;
-      --wt-ease:          cubic-bezier(0.2, 0.8, 0.2, 1);
+      --wt-secondary: #06b6d4;
+      --wt-ink: #0b1220;
+      --wt-ink-2: #12244a;
+      --wt-text: #0f172a;
+      --wt-text-muted: #475569;
+      --wt-text-light: #94a3b8;
+      --wt-bg: #f6f8fc;
+      --wt-surface: #ffffff;
+      --wt-border: rgba(15, 23, 42, 0.10);
+      --header-height: 60px;
+      --sidebar-width: 280px;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
-
     body {
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       color: var(--wt-text);
@@ -36,7 +40,7 @@
 
     .shell { display: flex; flex-direction: column; height: 100vh; }
 
-    /* ── Header ────────────────────────────────────── */
+    /* Header */
     .header {
       height: var(--header-height);
       padding: 0 20px;
@@ -59,18 +63,30 @@
     }
     .header__title { font-weight: 800; font-size: 16px; letter-spacing: 0.3px; }
     .header__subtitle { font-size: 11px; color: rgba(255,255,255,0.6); }
-    .header__dot {
+    .header__right { display: flex; gap: 8px; align-items: center; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.06);
+      font-size: 11px;
+      color: rgba(255,255,255,0.9);
+      user-select: none;
+    }
+    .pill .dot {
       width: 8px; height: 8px;
       border-radius: 999px;
-      background: #34d399;
-      box-shadow: 0 0 0 3px rgba(52,211,153,0.25);
-      animation: pulse 2s ease-in-out infinite;
+      background: #94a3b8;
+      box-shadow: 0 0 0 3px rgba(148,163,184,0.20);
     }
-    @keyframes pulse {
-      0%, 100% { box-shadow: 0 0 0 3px rgba(52,211,153,0.25); }
-      50%      { box-shadow: 0 0 0 6px rgba(52,211,153,0.10); }
-    }
-    .header__right { display: flex; gap: 8px; }
+    .pill[data-state="ok"] .dot   { background: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,0.20); }
+    .pill[data-state="warn"] .dot { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251,191,36,0.18); }
+    .pill[data-state="off"] .dot  { background: #94a3b8; box-shadow: 0 0 0 3px rgba(148,163,184,0.18); }
+
     .icon-btn {
       width: 36px; height: 36px;
       border: 1px solid rgba(255,255,255,0.14);
@@ -83,11 +99,10 @@
     }
     .icon-btn:hover { background: rgba(255,255,255,0.14); }
 
-
-    /* ── Main ──────────────────────────────────────── */
+    /* Main */
     .main { flex: 1; display: flex; min-height: 0; }
 
-    /* ── Sidebar ───────────────────────────────────── */
+    /* Sidebar */
     .sidebar {
       width: var(--sidebar-width);
       background: var(--wt-surface);
@@ -124,7 +139,6 @@
       font-family: inherit;
     }
     .sidebar__item:hover { background: rgba(37,99,235,0.06); }
-    .sidebar__item--active { background: rgba(37,99,235,0.08); color: var(--wt-primary); font-weight: 600; }
     .sidebar__icon {
       width: 32px; height: 32px;
       border-radius: 8px;
@@ -141,7 +155,7 @@
     }
     .sidebar__footer p { font-size: 11px; color: var(--wt-text-light); line-height: 1.5; }
 
-    /* ── Chat Area ─────────────────────────────────── */
+    /* Chat area */
     .chat-area {
       flex: 1;
       display: flex;
@@ -152,34 +166,84 @@
         radial-gradient(600px 400px at 80% 10%, rgba(6,182,212,0.04), transparent 50%),
         #f9fbff;
     }
+
     .welcome {
-      padding: 24px 28px;
+      padding: 18px 22px;
       border-bottom: 1px solid var(--wt-border);
       background: var(--wt-surface);
     }
     .welcome h2 { font-size: 18px; margin-bottom: 6px; }
     .welcome p { font-size: 13px; color: var(--wt-text-muted); line-height: 1.5; }
-    .welcome__chips { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
-    .welcome__chip {
-      padding: 7px 14px;
-      border: 1px solid var(--wt-border);
-      border-radius: 999px;
-      background: var(--wt-surface);
-      color: var(--wt-text);
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s;
-      font-family: inherit;
+
+    /* Embedded avatar bar (above chat transcript) */
+    .avatar-bar {
+      display: none;
+      gap: 14px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--wt-border);
+      background: rgba(255,255,255,0.80);
+      backdrop-filter: blur(10px);
+      align-items: center;
     }
-    .welcome__chip:hover { background: var(--wt-primary); color: #fff; border-color: var(--wt-primary); }
+    .avatar-bar.visible { display: flex; }
+    .avatar-video-wrap {
+      width: 320px;
+      height: 180px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #0b1220;
+      border: 1px solid rgba(15,23,42,0.10);
+      position: relative;
+      flex-shrink: 0;
+    }
+    .avatar-video-wrap video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .avatar-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+    .avatar-meta .small {
+      font-size: 12px;
+      color: var(--wt-text-muted);
+      line-height: 1.4;
+    }
+    .avatar-meta .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .btn {
+      appearance: none;
+      border: 1px solid rgba(15,23,42,0.12);
+      background: #fff;
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 12px;
+      color: var(--wt-text);
+      transition: all .15s;
+    }
+    .btn:hover { border-color: rgba(37,99,235,0.35); box-shadow: 0 6px 18px rgba(37,99,235,0.08); }
+    .btn.primary { background: var(--wt-primary); color: #fff; border-color: var(--wt-primary); }
+    .btn.primary:hover { background: var(--wt-primary-hover); border-color: var(--wt-primary-hover); }
+    .btn.danger { background: #ef4444; color: #fff; border-color: #ef4444; }
+    .btn.danger:hover { background: #dc2626; border-color: #dc2626; }
+    .select {
+      border: 1px solid rgba(15,23,42,0.12);
+      border-radius: 12px;
+      padding: 10px 10px;
+      font-size: 12px;
+      min-width: 180px;
+      background: #fff;
+    }
 
     #webchat { flex: 1; min-height: 0; font-size: 14px; }
     #webchat .webchat__basic-transcript__content { white-space: pre-wrap !important; word-break: break-word !important; }
     #webchat .webchat__bubble { max-width: 72% !important; margin: 8px 16px !important; }
     #webchat .webchat__bubble__content { padding: 12px 16px !important; border-radius: 16px !important; }
-    #webchat .webchat__bubble__content ul,
-    #webchat .webchat__bubble__content ol { padding-left: 20px !important; margin: 6px 0 !important; }
 
     .chat-footer {
       padding: 6px 16px;
@@ -191,12 +255,14 @@
       flex-shrink: 0;
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: 900px) {
       .sidebar { display: none; }
-      .welcome { padding: 16px 20px; }
+      .avatar-bar { flex-direction: column; align-items: stretch; }
+      .avatar-video-wrap { width: 100%; height: 220px; }
     }
   </style>
 </head>
+
 <body>
   <div class="shell">
     <div class="header">
@@ -206,157 +272,162 @@
           <div class="header__title">Wild Tech Assistant</div>
           <div class="header__subtitle">AI-Powered Business Intelligence</div>
         </div>
-        <span class="header__dot" aria-hidden="true"></span>
       </div>
+
       <div class="header__right">
-        <button class="icon-btn" id="restartBtn" aria-label="Restart conversation">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        <span class="pill" id="voicePill" data-state="off" title="Voice (always listening)">
+          <span class="dot"></span><span id="voicePillText">Voice: Off</span>
+        </span>
+        <span class="pill" id="avatarPill" data-state="off" title="Avatar">
+          <span class="dot"></span><span id="avatarPillText">Avatar: Off</span>
+        </span>
+
+        <button class="icon-btn" id="toggleAvatarBarBtn" aria-label="Toggle avatar bar" title="Toggle avatar bar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4z" />
+            <path d="M12 11a2 2 0 1 0-2-2 2 2 0 0 0 2 2z" />
+            <path d="M16 17a4 4 0 0 0-8 0" />
+          </svg>
         </button>
+
+        <button class="icon-btn" id="restartBtn" aria-label="Restart conversation" title="Restart conversation">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+          </svg>
+        </button>
+
         <button class="icon-btn" id="closeBtn" aria-label="Close" title="Close">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
         </button>
       </div>
     </div>
-
 
     <div class="main">
       <nav class="sidebar" aria-label="Topics">
         <div class="sidebar__section">
           <div class="sidebar__label">Explore Topics</div>
-          <button class="sidebar__item sidebar__item--active" onclick="sendTopic('How can Wild Tech help my company?')">
-            <div class="sidebar__icon" style="background:rgba(37,99,235,0.1); color:var(--wt-primary);">&#x1F50D;</div>
+          <button class="sidebar__item" onclick="sendTopic('How can Wild Tech help my company?')">
+            <div class="sidebar__icon" style="background:rgba(37,99,235,0.1); color:var(--wt-primary);">🔍</div>
             <div class="sidebar__item-text">Company Research<br><span class="sidebar__item-desc">Get a personalized proposal</span></div>
           </button>
           <button class="sidebar__item" onclick="sendTopic('What software products does Wild Tech offer?')">
-            <div class="sidebar__icon" style="background:rgba(6,182,212,0.1); color:var(--wt-secondary);">&#x1F4E6;</div>
-            <div class="sidebar__item-text">Products<br><span class="sidebar__item-desc">Software &amp; integrations</span></div>
-          </button>
-          <button class="sidebar__item" onclick="sendTopic('Show me Wild Tech case studies and customer success stories')">
-            <div class="sidebar__icon" style="background:rgba(139,92,246,0.1); color:#8b5cf6;">&#x1F3C6;</div>
-            <div class="sidebar__item-text">Case Studies<br><span class="sidebar__item-desc">Customer success stories</span></div>
-          </button>
-          <button class="sidebar__item" onclick="sendTopic('Compare NetSuite vs Dynamics 365 for my business')">
-            <div class="sidebar__icon" style="background:rgba(245,158,11,0.1); color:#f59e0b;">&#x2696;</div>
-            <div class="sidebar__item-text">ERP Shootout<br><span class="sidebar__item-desc">NetSuite vs Dynamics 365</span></div>
+            <div class="sidebar__icon" style="background:rgba(6,182,212,0.1); color:var(--wt-secondary);">📦</div>
+            <div class="sidebar__item-text">Products<br><span class="sidebar__item-desc">Software & integrations</span></div>
           </button>
         </div>
-        <div class="sidebar__section">
-          <div class="sidebar__label">Quick Actions</div>
-          <button class="sidebar__item" onclick="sendTopic('I want to submit an RFP for review')">
-            <div class="sidebar__icon" style="background:rgba(16,185,129,0.1); color:#10b981;">&#x1F4CB;</div>
-            <div class="sidebar__item-text">Submit RFP<br><span class="sidebar__item-desc">Get AI-powered review</span></div>
-          </button>
-          <button class="sidebar__item" onclick="sendTopic('I would like to speak with someone from Wild Tech')">
-            <div class="sidebar__icon" style="background:rgba(239,68,68,0.1); color:#ef4444;">&#x1F4DE;</div>
-            <div class="sidebar__item-text">Contact Us<br><span class="sidebar__item-desc">Talk to a human</span></div>
-          </button>
-        </div>
+
         <div class="sidebar__footer">
-          <p>Wild Tech AI Assistant is powered by Microsoft Copilot Studio and Azure OpenAI with real-time web intelligence.</p>
+          <p>Powered by Copilot Studio + Azure Speech (STT/TTS) + Real-time Avatar.</p>
         </div>
       </nav>
 
       <div class="chat-area">
         <div class="welcome">
           <h2>Welcome to Wild Tech AI</h2>
-          <p>I can research companies, generate proposals, compare ERP solutions, and share our success stories. What would you like to explore?</p>
-          <div class="welcome__chips">
-            <button class="welcome__chip" onclick="sendTopic('Research my company')">Research my company</button>
-            <button class="welcome__chip" onclick="sendTopic('Show me a demo')">Show me a demo</button>
-            <button class="welcome__chip" onclick="sendTopic('What makes Wild Tech different?')">Why Wild Tech?</button>
+          <p>
+            Voice is set to <strong>always listening</strong> after you click anywhere on the page (browser permission).
+            Toggle the avatar bar to show the real-time avatar above chat.
+          </p>
+        </div>
+
+        <!-- Avatar embedded above chat -->
+        <div class="avatar-bar" id="avatarBar">
+          <div class="avatar-video-wrap">
+            <video id="avatarVideo" autoplay playsinline muted></video>
+            <audio id="avatarAudio" autoplay></audio>
+          </div>
+
+          <div class="avatar-meta">
+            <div class="small">
+              <strong>Avatar</strong> speaks bot replies when running. Voice (always listening) sends your speech as messages automatically.
+            </div>
+
+            <div class="row">
+              <button class="btn primary" id="startVoiceBtn">Start Voice</button>
+              <button class="btn danger" id="stopVoiceBtn">Stop Voice</button>
+            </div>
+
+            <div class="row">
+              <select class="select" id="avatarCharacter">
+                <option value="lisa" selected>lisa</option>
+                <option value="anika">anika</option>
+                <option value="guy">guy</option>
+              </select>
+              <select class="select" id="avatarStyle">
+                <option value="casual-sitting" selected>casual-sitting</option>
+                <option value="formal-sitting">formal-sitting</option>
+                <option value="casual-standing">casual-standing</option>
+              </select>
+            </div>
+
+            <div class="row">
+              <button class="btn primary" id="startAvatarBtn">Start Avatar</button>
+              <button class="btn danger" id="stopAvatarBtn">Stop Avatar</button>
+              <button class="btn" id="testAvatarBtn">Test “Hello”</button>
+            </div>
           </div>
         </div>
+
         <div id="webchat" role="main"></div>
-        <div class="chat-footer">Powered by Wild Tech AI &middot; Microsoft Copilot Studio &middot; Azure OpenAI</div>
+        <div class="chat-footer">GitHub Pages · Copilot Studio · Azure Speech · Real-time Avatar</div>
       </div>
     </div>
   </div>
 
   <script>
+    /*************************************************************
+     * CONFIG (keep East US as requested)
+     *************************************************************/
+    const tokenEndpoint =
+      "https://23f35eb008b6e8ee81b314b56449de.c0.environment.api.powerplatform.com/powervirtualagents/botsbyschema/copilots_header_5f477/directline/token?api-version=2022-03-01-preview";
+
+    const SPEECH_TOKEN_ENDPOINT =
+      "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net/api/speechToken";
+
+    const AVATAR_RELAY_TOKEN_ENDPOINT =
+      "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net/api/avatarRelay";
+
+    const DEFAULT_SPEECH_LOCALE = "en-US";
+    const DEFAULT_TTS_VOICE = "en-US-AvaMultilingualNeural";
+
+    /*************************************************************
+     * Copilot Studio Direct Line bootstrap (same pattern as your file)
+     *************************************************************/
     let directLineUrl = null;
     let store = null;
 
-    const tokenEndpoint = "https://23f35eb008b6e8ee81b314b56449de.c0.environment.api.powerplatform.com/powervirtualagents/botsbyschema/copilots_header_5f477/directline/token?api-version=2022-03-01-preview";
     const environmentEndPoint = tokenEndpoint.slice(0, tokenEndpoint.indexOf("/powervirtualagents"));
     const apiVersion = tokenEndpoint.slice(tokenEndpoint.indexOf("api-version")).split("=")[1];
-    const regionalChannelSettingsURL = `${environmentEndPoint}/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`;
-    const SPEECH_TOKEN_ENDPOINT =
-  "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net/api/speechToken";
+    const regionalChannelSettingsURL =
+      `${environmentEndPoint}/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`;
 
-const AVATAR_RELAY_TOKEN_ENDPOINT =
-  "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net/api/avatarRelay";
-    
-    let usingMock = false;
+    /*************************************************************
+     * UI helpers
+     *************************************************************/
+    const voicePill = () => document.getElementById("voicePill");
+    const voicePillText = () => document.getElementById("voicePillText");
+    const avatarPill = () => document.getElementById("avatarPill");
+    const avatarPillText = () => document.getElementById("avatarPillText");
 
-    const mockResponses = {
-      'company research': "## Company Research Capabilities\n\nWild Tech's AI assistant can research any company in real-time using **Azure OpenAI + Bing Web Search grounding**.\n\nHere's how it works:\n\n1. **Enter a company name** — e.g., \"Research BHP\" or \"Tell me about Woolworths\"\n2. **AI researches live** — Searches the web for latest company info, news, and financials\n3. **Generates a tailored proposal** — Shows how Wild Tech's solutions can address their specific challenges\n\n### What the research includes:\n- Industry & company overview\n- Current technology stack (from job postings & news)\n- Key business challenges identified\n- Recommended Wild Tech solutions\n- Estimated ROI projections\n\n*Try it now — type any company name!*",
-      'research': "## Company Research Capabilities\n\nWild Tech's AI assistant can research any company in real-time using **Azure OpenAI + Bing Web Search grounding**.\n\nJust tell me a company name and I'll research them live, analyse their tech stack, and generate a tailored proposal.\n\n*Try it now — type any company name!*",
-      'product': "## Wild Tech Products & Solutions\n\n### AI & Digital Transformation\n- **AI Adoption & Acceleration** — From pilot to production AI\n- **AI Agents & Chatbots** — Intelligent automation (like this assistant!)\n- **AI Governance & Data** — Control and compliance for AI\n- **Microsoft Copilot** — Productivity AI across Microsoft 365\n\n### Enterprise Resource Planning (ERP)\n- **Dynamics 365 Finance** — Financial management & planning\n- **Dynamics 365 Supply Chain Management** — End-to-end visibility\n- **Dynamics 365 Business Central** — All-in-one business management\n- **NetSuite ERP** — Cloud-native ERP for growing businesses\n\n### CRM & Customer Experience\n- **Dynamics 365 Sales** — Sales force automation\n- **Dynamics 365 Customer Service** — Support & service management\n- **Dynamics 365 Field Services** — Mobile field operations\n- **Dynamics 365 Customer Insights** — Data-driven analytics\n\n### Cloud & Infrastructure\n- **Cloud Migration** — Modernise without complexity\n- **Hybrid Cloud** — Scalable public & private cloud\n- **Managed Services** — Proactive support & optimisation\n- **IT Security** — Integrated security solutions\n\n**Partners:** Microsoft Solution Partner | Oracle | NetSuite | Sage\n\nWant details on a specific solution?",
-      'case stud': "## Wild Tech Success Stories\n\n### Cheap as Chips — Retail Transformation\n**Industry:** Retail\n**Challenge:** Legacy IT systems limiting growth\n**Result:** Transformed from old-school retailer to **digital powerhouse**\n> *\"We chose Wild Tech because they could see the bigger picture behind our challenges.\"*\n\n### MATelec Australia — Manufacturing Scale-Up\n**Industry:** Manufacturing\n**Challenge:** Legacy infrastructure couldn't support planned **4x growth**\n**Result:** Positioned for significant expansion with modern systems\n> *\"Wild Tech stood out to us as a good culture fit.\"*\n\n### RM Surveys — Seamless Transition\n**Industry:** Surveying & Data Services\n**Challenge:** System transition with zero disruption\n**Result:** Maintained full business momentum throughout\n> *\"Speed and momentum were always promoted — we didn't lose time.\"*\n\n### Metro Department Store Singapore\n**Industry:** Retail (Singapore)\n**Solution:** Dynamics 365 Finance & Operations\n**Result:** Successful modernisation of legacy retail systems\n\n**Other clients:** AUSGrid, Chrysos Corporation, RBM Plastics, Glad Group, Uncle Bill's, Silk Laundry\n\nWant to hear about a specific industry?",
-      'netsuite': "## ERP Comparison: NetSuite vs Dynamics 365\n\n| Feature | NetSuite | Dynamics 365 |\n|---------|----------|--------------|\n| **Best For** | Mid-market, cloud-native | Enterprise, Microsoft ecosystem |\n| **Deployment** | Cloud only | Cloud + On-premise |\n| **Modules** | ERP, CRM, eCommerce | Finance, SCM, Sales, Service |\n| **Customisation** | SuiteScript, SuiteFlow | Power Platform, C#, Azure |\n| **AI Features** | Basic analytics | Copilot AI built-in |\n| **Pricing** | Per-module licensing | Per-user + per-app |\n\n### Wild Tech's Approach\nUnlike single-vendor firms, we offer **demos and advice across NetSuite, Microsoft, SAP, Oracle, and Sage** — recommending what's genuinely best for you.\n\n**Our 5-phase implementation:**\n1. Mapping & Planning\n2. Digital Maturity Assessment\n3. Budget Establishment\n4. Custom Solution Development\n5. Scalability & Support\n\nWant a tailored comparison for your business?",
-      'dynamics': "## ERP Comparison: NetSuite vs Dynamics 365\n\n| Feature | NetSuite | Dynamics 365 |\n|---------|----------|--------------|\n| **Best For** | Mid-market, cloud-native | Enterprise, Microsoft ecosystem |\n| **Deployment** | Cloud only | Cloud + On-premise |\n| **Modules** | ERP, CRM, eCommerce | Finance, SCM, Sales, Service |\n| **Customisation** | SuiteScript, SuiteFlow | Power Platform, C#, Azure |\n| **AI Features** | Basic analytics | Copilot AI built-in |\n| **Pricing** | Per-module licensing | Per-user + per-app |\n\n### Wild Tech's Approach\nUnlike single-vendor firms, we offer **demos and advice across NetSuite, Microsoft, SAP, Oracle, and Sage** — recommending what's genuinely best for you.\n\n**Our 5-phase implementation:**\n1. Mapping & Planning\n2. Digital Maturity Assessment\n3. Budget Establishment\n4. Custom Solution Development\n5. Scalability & Support\n\nWant a tailored comparison for your business?",
-      'erp': "## ERP Comparison: NetSuite vs Dynamics 365\n\n| Feature | NetSuite | Dynamics 365 |\n|---------|----------|--------------|\n| **Best For** | Mid-market, cloud-native | Enterprise, Microsoft ecosystem |\n| **Deployment** | Cloud only | Cloud + On-premise |\n| **Modules** | ERP, CRM, eCommerce | Finance, SCM, Sales, Service |\n| **Customisation** | SuiteScript, SuiteFlow | Power Platform, C#, Azure |\n| **AI Features** | Basic analytics | Copilot AI built-in |\n| **Pricing** | Per-module licensing | Per-user + per-app |\n\n### Wild Tech's Approach\nUnlike single-vendor firms, we offer **demos and advice across NetSuite, Microsoft, SAP, Oracle, and Sage** — recommending what's genuinely best for you.\n\n**Our 5-phase implementation:**\n1. Mapping & Planning\n2. Digital Maturity Assessment\n3. Budget Establishment\n4. Custom Solution Development\n5. Scalability & Support\n\nWant a tailored comparison for your business?",
-      'rfp': "## Submit an RFP\n\nI'd be happy to help you get started! Here's what we'll need:\n\n1. **Your company name** and industry\n2. **Current systems** — What technology are you using today?\n3. **Project scope** — What challenges are you looking to solve?\n4. **Timeline** — When do you need the solution in place?\n5. **Budget range** (optional but helpful)\n\nOur team reviews RFPs within **24 hours** and responds with a tailored proposal.\n\n### Direct contact:\n- **Email:** info@wild-tech.com\n- **Australia:** +61 1300 360 154\n- **Singapore:** +65 6818 6133\n\nOr tell me your company name and I'll get started right here.",
-      'contact': "## Contact Wild Tech\n\n### Australia (Head Office)\n**Address:** Level 7, 2 Elizabeth Plaza, North Sydney, NSW 2060\n**Phone:** +61 1300 360 154\n**Email:** info@wild-tech.com\n\n### Singapore\n**Address:** Level 39, Marina Bay Financial Centre Tower 2, 10 Marina Boulevard, Singapore 018983\n**Phone:** +65 6818 6133\n\n### Malaysia\nRegional office — contact us for details.\n\n---\n\nI can help schedule a meeting:\n- **15-minute discovery call** — Quick overview of your needs\n- **30-minute technical consultation** — Deep dive into solutions\n- **In-person meeting** — At our North Sydney or Singapore office\n\nWhat works best for you?",
-      'speak': "## Contact Wild Tech\n\n### Australia (Head Office)\n**Address:** Level 7, 2 Elizabeth Plaza, North Sydney, NSW 2060\n**Phone:** +61 1300 360 154\n**Email:** info@wild-tech.com\n\n### Singapore\n**Address:** Level 39, Marina Bay Financial Centre Tower 2, 10 Marina Boulevard, Singapore 018983\n**Phone:** +65 6818 6133\n\n### Malaysia\nRegional office — contact us for details.\n\n---\n\nI can help schedule a meeting:\n- **15-minute discovery call** — Quick overview of your needs\n- **30-minute technical consultation** — Deep dive into solutions\n- **In-person meeting** — At our North Sydney or Singapore office\n\nWhat works best for you?",
-      'demo': "## Live Demo: AI Company Research\n\nLet me show you what Wild Tech's AI can do! Here's a sample research for **Contoso Manufacturing Ltd**:\n\n---\n\n**Company:** Contoso Manufacturing Ltd\n**Industry:** Industrial Manufacturing\n**Employees:** ~2,500 | **HQ:** Melbourne, VIC\n**Revenue:** ~$380M AUD\n\n### Key Findings\n- Currently using **SAP Business One** (legacy, 8+ years old)\n- Recent job postings mention **cloud migration** and **digital transformation**\n- Supply chain visibility gaps noted in latest annual report\n- Expanding into Southeast Asian markets\n\n### Recommended Wild Tech Solutions\n| Solution | Business Impact |\n|----------|----------------|\n| **Dynamics 365 Supply Chain** | End-to-end supply chain visibility |\n| **Power BI Analytics** | Real-time production dashboards |\n| **Azure Integration Services** | Connect legacy SAP with modern cloud |\n| **Copilot for Operations** | AI-assisted demand forecasting |\n\n### Estimated ROI\n- **30-40%** reduction in inventory carrying costs\n- **25%** faster order-to-delivery cycle\n- **$1.2M** projected annual savings\n\n---\n\n*Generated in seconds using Azure OpenAI + Bing Web Search.*\n\nWant me to research **your** company? Just type the name!",
-      'different': "## Why Wild Tech?\n\n### What sets us apart:\n\n**1. Multi-Platform Expertise**\nWe're not locked to one vendor. We demo and advise across **Microsoft, NetSuite, SAP, Oracle, and Sage** — recommending what's genuinely best for you.\n\n**2. AI-First Approach**\nThis chatbot is a live demo of what we build. From AI Agents to Microsoft Copilot, we deliver AI that works.\n\n**3. Award-Winning**\nRecognised by **AFR Fast 100**, **InnovationAus Awards 2025**, and **CRN Impact Awards**.\n\n**4. Asia-Pacific Presence**\nOffices in **North Sydney**, **Singapore**, and **Malaysia** — we understand the APAC market.\n\n**5. Proven Results**\nTrusted by AUSGrid, Cheap as Chips, Chrysos Corporation, MATelec, Metro Department Store Singapore, and more.\n\n**6. End-to-End Delivery**\nStrategy to implementation to managed services — one team, full accountability.\n\n**Partners:** Microsoft Solution Partner | Oracle | NetSuite | Sage",
-      'help': "## How Wild Tech Can Help\n\nI can assist you with:\n\n- **Company Research** — Enter any company name for a personalised AI proposal\n- **Products & Solutions** — Explore Dynamics 365, NetSuite, AI, Cloud & more\n- **Case Studies** — Real results from Cheap as Chips, MATelec, RM Surveys & others\n- **ERP Comparison** — NetSuite vs Dynamics 365 side-by-side\n- **Submit RFP** — Start a Request for Proposal\n- **Contact Us** — Reach our Sydney, Singapore, or Malaysia offices\n\n**Industries:** Manufacturing, Supply Chain, Retail, Energy & Utilities, Infrastructure, Construction, Financial Services\n\nWhat would you like to explore?"
-    };
-
-    function getMockResponse(text) {
-      const lower = (text || '').toLowerCase();
-      for (const [key, response] of Object.entries(mockResponses)) {
-        if (lower.includes(key)) return response;
-      }
-      return "Thanks for your message! I'm Wild Tech's AI assistant. I can help with:\n\n- **Company Research** — Real-time AI analysis\n- **Products** — Dynamics 365, NetSuite & more\n- **Case Studies** — Customer success stories\n- **ERP Comparison** — NetSuite vs Dynamics 365\n\nWhat would you like to explore?";
+    function setVoiceStatus(state, text) {
+      voicePill().dataset.state = state;
+      voicePillText().textContent = text;
+    }
+    function setAvatarStatus(state, text) {
+      avatarPill().dataset.state = state;
+      avatarPillText().textContent = text;
     }
 
-    function createMockDirectLine() {
-      const subscribers = { activity: [], connectionStatus: [] };
-      let idCounter = 0;
-      function createObs(type, initial) {
-        return {
-          subscribe(observer) {
-            const fn = typeof observer === 'function' ? observer : (v) => { if(observer.next) observer.next(v); };
-            subscribers[type].push(fn);
-            if (initial !== undefined) setTimeout(() => fn(initial), 0);
-            return { unsubscribe() { const i = subscribers[type].indexOf(fn); if(i>-1) subscribers[type].splice(i,1); } };
-          }
-        };
-      }
-      const directLine = {
-        activity$: createObs('activity'),
-        connectionStatus$: createObs('connectionStatus', 2),
-        postActivity(activity) {
-          const userAct = { ...activity, id: `user-${++idCounter}`, timestamp: new Date().toISOString() };
-          subscribers.activity.forEach(fn => fn(userAct));
-          setTimeout(() => {
-            const response = getMockResponse(activity.text);
-            subscribers.activity.forEach(fn => fn({
-              type: 'message',
-              id: `bot-${++idCounter}`,
-              from: { id: 'bot', name: 'Wild Tech Assistant', role: 'bot' },
-              text: response,
-              timestamp: new Date().toISOString()
-            }));
-          }, 800 + Math.random() * 700);
-          return { subscribe(obs) { if(obs.complete) obs.complete(); return { unsubscribe(){} }; } };
-        },
-        end() {}
-      };
-      setTimeout(() => {
-        subscribers.activity.forEach(fn => fn({
-          type: 'message',
-          id: `bot-${++idCounter}`,
-          from: { id: 'bot', name: 'Wild Tech Assistant', role: 'bot' },
-          text: "Hello! I'm Wild Tech's AI assistant. I can research companies, generate proposals, compare ERP platforms, and share our success stories.\n\nHow can I help you today?",
-          timestamp: new Date().toISOString()
-        }));
-      }, 600);
-      return directLine;
-    }
-
+    /*************************************************************
+     * Web Chat styling
+     *************************************************************/
     function getStyleOptions() {
       return {
         accent: "#2563eb",
@@ -389,6 +460,218 @@ const AVATAR_RELAY_TOKEN_ENDPOINT =
       };
     }
 
+    /*************************************************************
+     * Always-listening voice (continuous STT) + fallback TTS
+     * - Uses Speech SDK directly so mic stays open continuously.
+     * - Starts after a user gesture (browser requirement). [2](https://github.com/microsoft/BotFramework-WebChat/blob/main/docs/SPEECH.md)
+     *************************************************************/
+    let speechRecognizer = null;
+    let ttsSynthesizer = null;
+    let voiceRunning = false;
+
+    async function getSpeechToken() {
+      const r = await fetch(SPEECH_TOKEN_ENDPOINT, { cache: "no-store" });
+      if (!r.ok) throw new Error(`speechToken failed: ${r.status}`);
+      const data = await r.json();
+      if (!data.token || !data.region) throw new Error("speechToken must return { token, region }");
+      return data;
+    }
+
+    function stripMarkdownForSpeech(text) {
+      if (!text) return "";
+      return text
+        .replace(/```[\s\S]*?```/g, " ")
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/^#{1,6}\s+/gm, "")
+        .replace(/\*\*(.*?)\*\*/g, "$1")
+        .replace(/\*(.*?)\*/g, "$1")
+        .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+        .replace(/\n{2,}/g, "\n")
+        .trim();
+    }
+
+    async function startVoiceAlwaysListening() {
+      if (voiceRunning) return;
+      if (!window.SpeechSDK) throw new Error("Speech SDK not loaded.");
+
+      setVoiceStatus("warn", "Voice: Starting…");
+
+      const { token, region } = await getSpeechToken();
+
+      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
+      speechConfig.speechRecognitionLanguage = DEFAULT_SPEECH_LOCALE;
+      speechConfig.speechSynthesisVoiceName = DEFAULT_TTS_VOICE;
+
+      const audioIn = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+      const audioOut = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+
+      speechRecognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioIn);
+      ttsSynthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioOut);
+
+      // Push recognized speech into Web Chat automatically
+      speechRecognizer.recognized = (s, e) => {
+        if (!e || !e.result) return;
+        const text = e.result.text;
+        if (!text || !text.trim()) return;
+
+        // Send speech as a message into Web Chat
+        if (store) {
+          store.dispatch({ type: "WEB_CHAT/SEND_MESSAGE", payload: { text } });
+        }
+      };
+
+      speechRecognizer.canceled = (s, e) => {
+        console.warn("Speech canceled:", e);
+        setVoiceStatus("warn", "Voice: Restarting…");
+      };
+
+      speechRecognizer.sessionStopped = () => {
+        if (voiceRunning) {
+          // Try to keep it always-on
+          speechRecognizer.startContinuousRecognitionAsync(
+            () => {},
+            err => console.warn("Restart recognition error:", err)
+          );
+        }
+      };
+
+      await new Promise((resolve, reject) => {
+        speechRecognizer.startContinuousRecognitionAsync(resolve, reject);
+      });
+
+      voiceRunning = true;
+      setVoiceStatus("ok", "Voice: On (Always)");
+    }
+
+    async function stopVoice() {
+      voiceRunning = false;
+
+      if (speechRecognizer) {
+        await new Promise((resolve) => {
+          speechRecognizer.stopContinuousRecognitionAsync(() => resolve(), () => resolve());
+        });
+        speechRecognizer.close();
+        speechRecognizer = null;
+      }
+
+      if (ttsSynthesizer) {
+        ttsSynthesizer.close();
+        ttsSynthesizer = null;
+      }
+
+      setVoiceStatus("off", "Voice: Off");
+    }
+
+    /*************************************************************
+     * Real-time Avatar (WebRTC) using relay token
+     * - Avatar relay endpoint is required to create RTCPeerConnection. [3](https://community.powerplatform.com/forums/thread/details/?threadid=35925a0c-54f0-ef11-be20-7c1e5266971b)[4](https://powerplatformarmy.blogspot.com/2025/03/detailed-guide-to-embedding-copilot.html)
+     *************************************************************/
+    let avatarSynthesizer = null;
+    let peerConnection = null;
+    let avatarReady = false;
+
+    async function getAvatarRelayConfig() {
+      const r = await fetch(AVATAR_RELAY_TOKEN_ENDPOINT, { cache: "no-store" });
+      if (!r.ok) throw new Error(`avatarRelay failed: ${r.status}`);
+      const data = await r.json();
+      if (!data.urls || !data.username || !data.credential) {
+        throw new Error("avatarRelay must return { urls, username, credential }");
+      }
+      return data;
+    }
+
+    async function startAvatar() {
+      if (!window.SpeechSDK) throw new Error("Speech SDK not loaded.");
+
+      setAvatarStatus("warn", "Avatar: Starting…");
+
+      await stopAvatar();
+
+      const { token, region } = await getSpeechToken();
+      const ice = await getAvatarRelayConfig();
+
+      peerConnection = new RTCPeerConnection({
+        iceServers: [{ urls: ice.urls, username: ice.username, credential: ice.credential }]
+      });
+
+      peerConnection.ontrack = (event) => {
+        if (event.track.kind === "video") {
+          const v = document.getElementById("avatarVideo");
+          v.srcObject = event.streams[0];
+          v.muted = true;
+          v.autoplay = true;
+          v.playsInline = true;
+        }
+        if (event.track.kind === "audio") {
+          const a = document.getElementById("avatarAudio");
+          a.srcObject = event.streams[0];
+          a.autoplay = true;
+        }
+      };
+
+      peerConnection.addTransceiver("video", { direction: "sendrecv" });
+      peerConnection.addTransceiver("audio", { direction: "sendrecv" });
+
+      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
+      speechConfig.speechSynthesisLanguage = DEFAULT_SPEECH_LOCALE;
+      speechConfig.speechSynthesisVoiceName = DEFAULT_TTS_VOICE;
+
+      const character = document.getElementById("avatarCharacter").value;
+      const style = document.getElementById("avatarStyle").value;
+
+      const avatarConfig = new SpeechSDK.AvatarConfig(character, style);
+      avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(speechConfig, avatarConfig);
+
+      await avatarSynthesizer.startAvatarAsync(peerConnection);
+
+      avatarReady = true;
+      setAvatarStatus("ok", "Avatar: On");
+    }
+
+    async function stopAvatar() {
+      avatarReady = false;
+
+      if (avatarSynthesizer) {
+        try { avatarSynthesizer.close(); } catch (e) {}
+        avatarSynthesizer = null;
+      }
+
+      if (peerConnection) {
+        try { peerConnection.close(); } catch (e) {}
+        peerConnection = null;
+      }
+
+      const v = document.getElementById("avatarVideo");
+      if (v) v.srcObject = null;
+      const a = document.getElementById("avatarAudio");
+      if (a) a.srcObject = null;
+
+      setAvatarStatus("off", "Avatar: Off");
+    }
+
+    async function speakBotReply(text) {
+      const clean = stripMarkdownForSpeech(text);
+      if (!clean) return;
+
+      // Prefer avatar when running
+      if (avatarReady && avatarSynthesizer) {
+        try {
+          await avatarSynthesizer.speakTextAsync(clean);
+          return;
+        } catch (e) {
+          console.warn("Avatar speak failed, fallback to TTS:", e);
+        }
+      }
+
+      // Fallback: TTS to default speaker
+      if (ttsSynthesizer) {
+        try { ttsSynthesizer.speakTextAsync(clean); } catch (e) {}
+      }
+    }
+
+    /*************************************************************
+     * Web Chat store: speak incoming bot messages
+     *************************************************************/
     function createCustomStore() {
       store = window.WebChat.createStore({}, ({ dispatch }) => next => action => {
         if (action.type === "DIRECT_LINE/CONNECT_FULFILLED") {
@@ -398,55 +681,98 @@ const AVATAR_RELAY_TOKEN_ENDPOINT =
             payload: { activity: { channelData: { postBack: true }, name: "startConversation", type: "event" } }
           });
         }
+
+        // Speak bot messages (avatar or TTS)
+        if (action.type === "DIRECT_LINE/INCOMING_ACTIVITY") {
+          const a = action.payload && action.payload.activity;
+          if (a && a.type === "message" && a.from && (a.from.role === "bot" || a.from.id === "bot") && a.text) {
+            speakBotReply(a.text).catch(console.warn);
+          }
+        }
+
         return next(action);
       });
+
       return store;
     }
 
-    function sendTopic(text) {
-      if (!store) return;
-      const mockResp = getMockResponse(text);
-      const isMockTopic = !mockResp.startsWith("Thanks for your message");
-      if (isMockTopic) {
-        store.dispatch({ type: 'DIRECT_LINE/INCOMING_ACTIVITY', payload: { activity: { type: 'message', id: `user-${Date.now()}`, from: { id: 'user', role: 'user' }, text: text, timestamp: new Date().toISOString() } } });
-        setTimeout(() => { store.dispatch({ type: 'DIRECT_LINE/INCOMING_ACTIVITY', payload: { activity: { type: 'message', id: `bot-${Date.now()}`, from: { id: 'bot', name: 'Wild Tech Assistant', role: 'bot' }, text: mockResp, timestamp: new Date().toISOString() } } }); }, 800);
-      } else {
-        store.dispatch({ type: "WEB_CHAT/SEND_MESSAGE", payload: { text } });
-      }
-      document.querySelectorAll('.sidebar__item').forEach(el => el.classList.remove('sidebar__item--active'));
+    /*************************************************************
+     * Render Web Chat
+     *************************************************************/
+    function renderWebChat(directLine) {
+      window.WebChat.renderWebChat(
+        { directLine, styleOptions: getStyleOptions(), store: createCustomStore() },
+        document.getElementById("webchat")
+      );
     }
 
+    // Sidebar quick-send
+    window.sendTopic = function (text) {
+      if (!store) return;
+      store.dispatch({ type: "WEB_CHAT/SEND_MESSAGE", payload: { text } });
+    };
+
     async function restartConversation() {
-      if (usingMock) {
-        const directLine = createMockDirectLine();
-        window.WebChat.renderWebChat({ directLine, styleOptions: getStyleOptions(), store: createCustomStore() }, document.getElementById("webchat"));
-        return;
-      }
       if (!directLineUrl) return;
       const response = await fetch(tokenEndpoint);
       const convInfo = await response.json();
       if (!convInfo.token) return;
-      const newDirectLine = window.WebChat.createDirectLine({ domain: `${directLineUrl}v3/directline`, token: convInfo.token });
-      window.WebChat.renderWebChat({ directLine: newDirectLine, styleOptions: getStyleOptions(), store: createCustomStore() }, document.getElementById("webchat"));
+
+      const directLine = window.WebChat.createDirectLine({ domain: `${directLineUrl}v3/directline`, token: convInfo.token });
+      renderWebChat(directLine);
     }
 
+    /*************************************************************
+     * Init
+     *************************************************************/
     async function init() {
-      let directLine;
-      try {
-        const response = await fetch(regionalChannelSettingsURL, { signal: AbortSignal.timeout(5000) });
-        const data = await response.json();
-        directLineUrl = data.channelUrlsById.directline;
-        const convResponse = await fetch(tokenEndpoint, { signal: AbortSignal.timeout(5000) });
-        const convInfo = await convResponse.json();
-        directLine = window.WebChat.createDirectLine({ domain: `${directLineUrl}v3/directline`, token: convInfo.token });
-      } catch (err) {
-        console.warn("Bot unavailable, using demo mode:", err.message);
-        usingMock = true;
-        directLine = createMockDirectLine();
-      }
-      window.WebChat.renderWebChat({ directLine, styleOptions: getStyleOptions(), store: createCustomStore() }, document.getElementById("webchat"));
+      setVoiceStatus("off", "Voice: Off");
+      setAvatarStatus("off", "Avatar: Off");
+
+      // Bootstrap Direct Line URL (Copilot Studio regional settings)
+      const response = await fetch(regionalChannelSettingsURL);
+      const data = await response.json();
+      directLineUrl = data.channelUrlsById.directline;
+
+      const convResponse = await fetch(tokenEndpoint);
+      const convInfo = await convResponse.json();
+
+      const directLine = window.WebChat.createDirectLine({ domain: `${directLineUrl}v3/directline`, token: convInfo.token });
+      renderWebChat(directLine);
+
+      // Buttons
       document.getElementById("restartBtn").addEventListener("click", restartConversation);
       document.getElementById("closeBtn").addEventListener("click", () => window.close());
+
+      document.getElementById("toggleAvatarBarBtn").addEventListener("click", () => {
+        document.getElementById("avatarBar").classList.toggle("visible");
+      });
+
+      document.getElementById("startVoiceBtn").addEventListener("click", () => startVoiceAlwaysListening().catch(e => {
+        console.error(e);
+        setVoiceStatus("warn", "Voice: Error");
+      }));
+      document.getElementById("stopVoiceBtn").addEventListener("click", () => stopVoice());
+
+      document.getElementById("startAvatarBtn").addEventListener("click", () => startAvatar().catch(e => {
+        console.error(e);
+        setAvatarStatus("warn", "Avatar: Error");
+      }));
+      document.getElementById("stopAvatarBtn").addEventListener("click", () => stopAvatar());
+      document.getElementById("testAvatarBtn").addEventListener("click", async () => {
+        try { await speakBotReply("Hello! This is the Wild Tech avatar speaking."); } catch (e) {}
+      });
+
+      // ALWAYS LISTENING: start voice after first user gesture (required for mic/audio in many browsers). [2](https://github.com/microsoft/BotFramework-WebChat/blob/main/docs/SPEECH.md)
+      const startOnce = async () => {
+        try {
+          await startVoiceAlwaysListening();
+        } catch (e) {
+          console.warn("Voice did not start automatically:", e.message);
+        }
+      };
+      window.addEventListener("pointerdown", startOnce, { once: true });
+      window.addEventListener("keydown", startOnce, { once: true });
     }
 
     document.addEventListener("DOMContentLoaded", () => init().catch(console.error));
