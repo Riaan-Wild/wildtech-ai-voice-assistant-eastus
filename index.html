@@ -491,57 +491,111 @@
     }
 
     async function startVoiceAlwaysListening() {
-      if (voiceRunning) return;
-      if (!window.SpeechSDK) throw new Error("Speech SDK not loaded.");
+  if (  setVoiceStatus("warn", "Voice: Starting…");  if (voiceRunning) return;
 
-      setVoiceStatus("warn", "Voice: Starting…");
+  const { token, region } = await getSpeechToken();
 
-      const { token, region } = await getSpeechToken();
+  const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
+  speechConfig.speechRecognitionLanguage = DEFAULT_SPEECH_LOCALE;
+  speechConfig.speechSynthesisVoiceName = DEFAULT_TTS_VOICE;
 
-      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(token, region);
-      speechConfig.speechRecognitionLanguage = DEFAULT_SPEECH_LOCALE;
-      speechConfig.speechSynthesisVoiceName = DEFAULT_TTS_VOICE;
+  // (Optional) make end-of-utterance detection a bit more responsive
+  // speechConfig.setProperty(SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "800");
+  // speechConfig.setProperty(SpeechSDK.PropertyId.Speech_SegmentationSilenceTimeoutMs, "800");
 
-      const audioIn = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
-      const audioOut = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+  const audioIn = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+  const audioOut = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
 
-      speechRecognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioIn);
-      ttsSynthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioOut);
+  speechRecognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioIn);
+  ttsSynthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioOut);
 
-      // Push recognized speech into Web Chat automatically
-      speechRecognizer.recognized = (s, e) => {
-        if (!e || !e.result) return;
-        const text = e.result.text;
-        if (!text || !text.trim()) return;
+  // ---- DEBUG / TELEMETRY (Highly recommended while troubleshooting) ----
+  speechRecognizer.sessionStarted = () => console.log("[STT] sessionStarted");
+  speechRecognizer.sessionStopped = () => {
+    console.log("[STT] sessionStopped");
 
-        // Send speech as a message into Web Chat
-        if (store) {
-          store.dispatch({ type: "WEB_CHAT/SEND_MESSAGE", payload: { text } });
-        }
-      };
-
-      speechRecognizer.canceled = (s, e) => {
-        console.warn("Speech canceled:", e);
-        setVoiceStatus("warn", "Voice: Restarting…");
-      };
-
-      speechRecognizer.sessionStopped = () => {
-        if (voiceRunning) {
-          // Try to keep it always-on
+    // Keep always-on (but avoid tight restart loops)
+    if (voiceRunning) {
+      setTimeout(() => {
+        try {
           speechRecognizer.startContinuousRecognitionAsync(
-            () => {},
-            err => console.warn("Restart recognition error:", err)
+            () => console.log("[STT] restarted"),
+            err => console.warn("[STT] restart error:", err)
           );
+        } catch (e) {
+          console.warn("[STT] restart threw:", e);
         }
-      };
-
-      await new Promise((resolve, reject) => {
-        speechRecognizer.startContinuousRecognitionAsync(resolve, reject);
-      });
-
-      voiceRunning = true;
-      setVoiceStatus("ok", "Voice: On (Always)");
+      }, 300);
     }
+  };
+
+  // Partial recognition — proves the mic pipeline is active
+  speechRecognizer.recognizing = (s, e) => {
+    const partial = e?.result?.text;
+    if (partial) console.log("[STT] recognizing:", partial);
+  };
+
+  // Final recognition results
+  speechRecognizer.recognized = (s, e) => {
+    if (!e || !e.result) return;
+
+    const reason = e.result.reason;
+
+    // You will commonly see NoMatch when the mic is allowed but audio is not usable / wrong device.
+    if (reason === SpeechSDK.ResultReason.NoMatch) {
+      console.warn("[STT] NoMatch (speech not recognized). Check mic device / input level / noise.");
+      return;
+    }
+
+    const text = (e.result.text || "").trim();
+    console.log("[STT] recognized:", reason, text);
+
+    if (!text) return;
+
+    // Send speech as a message into Web Chat
+    if (store) {
+      store.dispatch({ type: "WEB_CHAT/SEND_MESSAGE", payload: { text } });
+    } else {
+      console.warn("[STT] store not ready yet; dropping recognized text.");
+    }
+  };
+
+  // Cancellations give you the root cause (permission/device/network/auth)
+  speechRecognizer.canceled = (s, e) => {
+    console.error(
+      "[STT] canceled:",
+      "reason=", e?.reason,
+      "errorCode=", e?.errorCode,
+      "details=", e?.errorDetails
+    );
+
+    // If we're meant to be always-on, try restarting after a short delay
+    if (voiceRunning) {
+      setVoiceStatus("warn", "Voice: Restarting…");
+      setTimeout(() => {
+        try {
+          speechRecognizer.startContinuousRecognitionAsync(
+            () => console.log("[STT] restarted after cancel"),
+            err => console.warn("[STT] restart after cancel error:", err)
+          );
+        } catch (err) {
+          console.warn("[STT] restart after cancel threw:", err);
+        }
+      }, 750);
+    }
+  };
+
+  // ---- Start continuous recognition ----
+  await new Promise((resolve, reject) => {
+    speechRecognizer.startContinuousRecognitionAsync(resolve, reject);
+  });
+
+  voiceRunning = true;
+  setVoiceStatus("ok", "Voice: On (Always)");
+}
+  if (!window.SpeechSDK) throw new Error("Speech SDK not loaded.");
+
+
 
     async function stopVoice() {
       voiceRunning = false;
