@@ -280,7 +280,12 @@
     const environmentEndPoint = tokenEndpoint.slice(0, tokenEndpoint.indexOf("/powervirtualagents"));
     const apiVersion = tokenEndpoint.slice(tokenEndpoint.indexOf("api-version")).split("=")[1];
     const regionalChannelSettingsURL = `${environmentEndPoint}/powervirtualagents/regionalchannelsettings?api-version=${apiVersion}`;
+    const SPEECH_TOKEN_ENDPOINT =
+  "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net/api/speechToken";
 
+const AVATAR_RELAY_TOKEN_ENDPOINT =
+  "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net/api/avatarRelay";
+    
     let usingMock = false;
 
     const mockResponses = {
