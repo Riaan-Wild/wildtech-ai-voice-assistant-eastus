@@ -375,30 +375,40 @@
               <button class="btn" id="testAvatarBtn">Test “Hello”</button>
             </div>
 
-            <!-- Voice Live test panel (uses your new /api/voiceLiveHealth + /api/voiceLiveConfig functions) -->
+            <!-- Voice Live (real-time conversation) -->
             <div class="row" style="margin-top:6px;">
               <button class="btn" id="vlHealthBtn" title="Call /api/voiceLiveHealth">Voice Live: Health</button>
               <button class="btn" id="vlConfigBtn" title="Call /api/voiceLiveConfig">Voice Live: Config</button>
-              <button class="btn primary" id="vlConnectBtn" title="Open Voice Live WebSocket">Voice Live: Connect</button>
-              <button class="btn" id="vlSpeakBtn" title="Send a text prompt to Voice Live and play audio">Voice Live: Speak</button>
+              <button class="btn primary" id="vlConnectBtn" title="Open Voice Live WebSocket + start mic">Voice Live: Connect + Mic</button>
+              <button class="btn" id="vlMuteBtn" title="Mute/unmute microphone streaming">Mic: Mute</button>
               <button class="btn danger" id="vlDisconnectBtn" title="Close Voice Live WebSocket">Voice Live: Disconnect</button>
             </div>
 
             <div class="row" style="margin-top:4px;">
               <select class="select" id="vlVoiceType" title="Voice Live voice type">
-                <option value="openai" selected>openai</option>
-                <option value="azure-standard">azure-standard</option>
+                <option value="azure-standard" selected>azure-standard</option>
+                <option value="openai">openai</option>
               </select>
               <select class="select" id="vlVoiceName" title="Voice Live voice name">
-                <option value="alloy" selected>alloy</option>
+                <option value="en-AU-NatashaNeural" selected>en-AU-NatashaNeural</option>
+                <option value="en-AU-WilliamNeural">en-AU-WilliamNeural</option>
                 <option value="en-US-AvaMultilingualNeural">en-US-AvaMultilingualNeural</option>
+                <option value="alloy">alloy</option>
               </select>
-              <input class="select" id="vlModel" value="gpt-realtime" style="min-width:180px;" title="Voice Live model (query param)" />
+              <select class="select" id="vlLocale" title="Input language (transcription)">
+                <option value="en-AU" selected>en-AU</option>
+                <option value="en-GB">en-GB</option>
+                <option value="en-US">en-US</option>
+              </select>
+              <input class="select" id="vlModel" value="gpt-realtime" style="min-width:180px;" title="Voice Live model" />
             </div>
 
             <div style="margin-top:6px;">
-              <textarea id="vlPrompt" rows="2" style="width:100%; resize:vertical; padding:10px; border:1px solid rgba(15,23,42,0.12); border-radius:12px; font-size:12px;" placeholder="Voice Live test prompt (e.g., Say hello in one sentence)"></textarea>
-              <div id="vlLog" style="margin-top:6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:11px; color:#0f172a; background:#f3f4f6; border:1px solid rgba(15,23,42,0.10); border-radius:12px; padding:10px; max-height:120px; overflow:auto; white-space:pre-wrap;"></div>
+              <textarea id="vlPrompt" rows="2" style="width:100%; resize:vertical; padding:10px; border:1px solid rgba(15,23,42,0.12); border-radius:12px; font-size:12px;" placeholder="(Optional) Type here only if you want to test text→audio. For live conversation, just talk after Connect."></textarea>
+              <div class="row" style="margin-top:6px;">
+                <button class="btn" id="vlSpeakBtn" title="Send text prompt to Voice Live">Voice Live: Speak (text)</button>
+              </div>
+              <div id="vlLog" style="margin-top:6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:11px; color:#0f172a; background:#f3f4f6; border:1px solid rgba(15,23,42,0.10); border-radius:12px; padding:10px; max-height:140px; overflow:auto; white-space:pre-wrap;"></div>
             </div>
 
           </div>
@@ -420,27 +430,23 @@
     const SPEECH_TOKEN_ENDPOINT =
       "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net/api/speechToken";
 
-    
-
     const AVATAR_RELAY_TOKEN_ENDPOINT =
       "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net/api/avatarRelay";
 
-    // Voice Live test endpoints (Azure Functions). If these functions are deployed to the SAME Function App
-    // as speechToken/avatarRelay, you can leave VOICE_LIVE_BASE empty and we will auto-derive it.
-    // If Voice Live functions are in a different Function App, set VOICE_LIVE_BASE to that app origin.
-    const VOICE_LIVE_BASE = "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net"; // e.g. "https://<your-voicelive-funcapp>.azurewebsites.net"
+    
+
+    // Voice Live functions (health/config) — set to your Function App base if different.
+    // If left blank, we auto-derive from SPEECH_TOKEN_ENDPOINT origin.
+    const VOICE_LIVE_BASE = ""; // e.g. "https://<your-functionapp>.azurewebsites.net"
 
     function getVoiceLiveApiBase() {
-      // default: same origin as SPEECH_TOKEN_ENDPOINT (".../api/speechToken")
       const derived = new URL(SPEECH_TOKEN_ENDPOINT).origin;
       return VOICE_LIVE_BASE ? VOICE_LIVE_BASE : derived;
     }
 
     const VOICE_LIVE_HEALTH_ENDPOINT = () => `${getVoiceLiveApiBase()}/api/voiceLiveHealth`;
     const VOICE_LIVE_CONFIG_ENDPOINT = () => `${getVoiceLiveApiBase()}/api/voiceLiveConfig`;
-
-
-    const DEFAULT_SPEECH_LOCALE = "en-US";
+const DEFAULT_SPEECH_LOCALE = "en-US";
     const DEFAULT_TTS_VOICE = "en-US-AvaMultilingualNeural";
 
     /*************************************************************
@@ -828,16 +834,38 @@ async function stopVoice() {
     
 
     /*************************************************************
-     * Voice Live (WebSocket) test client
-     * Uses Voice Live API WebSocket endpoint + event protocol.
-     * WebSocket endpoint format and api-key query support are documented in Microsoft Learn.
+     * Voice Live (real-time voice conversation)
+     *
+     * - Connects to Voice Live WebSocket endpoint.
+     * - Streams mic audio as PCM16 @ 24kHz using input_audio_buffer.append.
+     * - Uses server-side VAD events (speech_started/speech_stopped) to auto-trigger responses.
+     * - Cancels in-progress response on barge-in (speech_started).
+     *
+     * Notes from Microsoft Learn:
+     * - WebSocket endpoint format: wss://<resource>.services.ai.azure.com/voice-live/realtime?api-version=2025-10-01
+     *   (or legacy cognitiveservices.azure.com).
+     * - Browser auth: api-key must be supplied via query string (headers not available prehandshake).
+     * - Server events include input_audio_buffer.speech_started / speech_stopped.
+     * - Client events include session.update, input_audio_buffer.append, response.create, response.cancel.
      *************************************************************/
 
     let vlSocket = null;
     let vlSessionReady = false;
+    let vlIsResponding = false;
+
+    // Audio output (play Voice Live response audio)
     let vlAudioCtx = null;
     let vlScriptNode = null;
     let vlPcmQueue = []; // Float32 samples
+
+    // Mic streaming
+    let vlMicStream = null;
+    let vlMicCtx = null;
+    let vlMicSource = null;
+    let vlMicProcessor = null;
+    let vlMicGain = null;
+    let vlMicRunning = false;
+    let vlMicMuted = false;
 
     function vlLog(line) {
       const el = document.getElementById('vlLog');
@@ -869,8 +897,6 @@ async function stopVoice() {
     function vlEnsureAudioOutput(sampleRate = 24000) {
       if (vlAudioCtx) return;
       vlAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
-
-      // ScriptProcessorNode is deprecated but works widely and is fine for a test harness.
       vlScriptNode = vlAudioCtx.createScriptProcessor(4096, 0, 1);
       vlScriptNode.onaudioprocess = (e) => {
         const out = e.outputBuffer.getChannelData(0);
@@ -889,7 +915,6 @@ async function stopVoice() {
     }
 
     function pcm16ToFloat32(uint8) {
-      // little-endian PCM16
       const view = new DataView(uint8.buffer, uint8.byteOffset, uint8.byteLength);
       const floats = new Float32Array(uint8.byteLength / 2);
       for (let i = 0; i < floats.length; i++) {
@@ -898,208 +923,6 @@ async function stopVoice() {
       }
       return floats;
     }
-
-    function buildVoiceLiveWsUrl(endpoint, apiKey, apiVersion, model) {
-      // Per Microsoft Learn: wss://<resource>.services.ai.azure.com/voice-live/realtime?api-version=...&model=...
-      // Older resources can use cognitiveservices.azure.com host.
-      // API key can be supplied via query string in browser environments.
-      const u = new URL(endpoint);
-      const wsOrigin = u.origin.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
-      const base = wsOrigin.replace(/\/$/, '');
-      const qs = new URLSearchParams({
-        'api-version': apiVersion,
-        model,
-        'api-key': apiKey
-      });
-      return `${base}/voice-live/realtime?${qs.toString()}`;
-    }
-
-    async function vlConnect() {
-      try {
-        if (vlSocket && (vlSocket.readyState === WebSocket.OPEN || vlSocket.readyState === WebSocket.CONNECTING)) {
-          vlLog('Already connected/connecting.');
-          return;
-        }
-
-        const cfgRes = await fetch(VOICE_LIVE_CONFIG_ENDPOINT(), { cache: 'no-store' });
-        if (!cfgRes.ok) {
-          const txt = await cfgRes.text();
-          throw new Error(`voiceLiveConfig failed ${cfgRes.status}: ${txt}`);
-        }
-        const cfg = await cfgRes.json();
-
-        const model = (document.getElementById('vlModel')?.value || 'gpt-realtime').trim();
-        const voiceType = document.getElementById('vlVoiceType')?.value || 'openai';
-        const voiceName = document.getElementById('vlVoiceName')?.value || 'alloy';
-
-        const wsUrl = buildVoiceLiveWsUrl(cfg.endpoint, cfg.apiKey, cfg.apiVersion || '2025-10-01', model);
-        vlLog(`Connecting WS: ${wsUrl.replace(cfg.apiKey, '***')}`);
-
-        // Ensure audio output chain is ready (must be after user gesture in some browsers).
-        vlEnsureAudioOutput(24000);
-        if (vlAudioCtx && vlAudioCtx.state === 'suspended') {
-          await vlAudioCtx.resume();
-        }
-
-        vlSessionReady = false;
-        vlPcmQueue = [];
-
-        vlSocket = new WebSocket(wsUrl);
-
-        vlSocket.onopen = () => {
-          vlLog('WS open. Sending session.update');
-
-          const sessionUpdate = {
-  type: "session.update",
-  session: {
-    modalities: ["audio"],
-    voice: { type: voiceType, name: voiceName },
-
-    input_audio_format: "pcm16",
-    input_audio_sampling_rate: 24000,
-    output_audio_format: "pcm16",
-
-    //THIS enables natural turn-taking
-    turn_detection: {
-      type: "azure_semantic_vad",
-      threshold: 0.5,
-      prefix_padding_ms: 300,
-      silence_duration_ms: 600
-    },
-
-    instructions: "You are a helpful assistant. Respond naturally."
-  }
-};
-
-          vlSocket.send(JSON.stringify(sessionUpdate));
-          // Start live mic streaming for voice-to-voice testing
-          vlStartMicStreaming().catch(e => vlLog('Mic start error: ' + e.message));
-        };
-
-        vlSocket.onmessage = (evt) => {
-          try {
-            const msg = JSON.parse(evt.data);
-
-            if (msg.type === 'session.created' || msg.type === 'session.updated') {
-              vlSessionReady = true;
-              vlLog(`${msg.type} (session ready)`);
-              return;
-            }
-
-            if (msg.type === 'error') {
-              vlLog(`ERROR: ${msg.error?.message || JSON.stringify(msg.error)}`);
-              return;
-            }
-
-            // Streamed audio chunks (base64 pcm16)
-            if (msg.type === 'response.audio.delta' && msg.delta) {
-              const bytes = base64ToUint8(msg.delta);
-              const floats = pcm16ToFloat32(bytes);
-              // enqueue
-              for (let i = 0; i < floats.length; i++) vlPcmQueue.push(floats[i]);
-              return;
-            }
-
-            // Streamed text
-            if (msg.type === 'response.text.delta' && msg.delta) {
-              vlLog(`TEXTΔ: ${msg.delta}`);
-              return;
-            }
-
-            if (msg.type === 'response.done') {
-              vlLog('response.done');
-              return;
-            }
-
-          } catch (e) {
-            // non-JSON message
-            vlLog(`WS message (non-JSON): ${String(evt.data).slice(0, 120)}`);
-          }
-        };
-
-        vlSocket.onerror = (e) => {
-          vlLog('WS error (see console)');
-          console.error('VoiceLive WS error:', e);
-        };
-
-        vlSocket.onclose = () => {
-          vlLog('WS closed');
-          vlSessionReady = false;
-          vlSocket = null;
-        };
-
-      } catch (e) {
-        vlLog(`Connect error: ${e.message}`);
-        console.error(e);
-      }
-    }
-
-    function vlDisconnect() {
-      try {
-        if (vlSocket) {
-          vlSocket.close();
-          vlSocket = null;
-        }
-        vlStopMicStreaming().catch(() => {});
-        vlSessionReady = false;
-        vlLog('Disconnected.');
-      } catch (e) {
-        vlLog(`Disconnect error: ${e.message}`);
-      }
-    }
-
-    function vlSpeak() {
-      if (!vlSocket || vlSocket.readyState !== WebSocket.OPEN) {
-        vlLog('Not connected. Click Voice Live: Connect first.');
-        return;
-      }
-      if (!vlSessionReady) {
-        vlLog('Session not ready yet. Wait for session.updated.');
-        return;
-      }
-
-      const prompt = (document.getElementById('vlPrompt')?.value || 'Say hello in one sentence.').trim();
-      if (!prompt) return;
-
-      const item = {
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'user',
-          content: [{ type: 'input_text', text: prompt }]
-        }
-      };
-
-      const responseCreate = {
-        type: 'response.create',
-        response: {
-          modalities: ['audio']
-        }
-      };
-
-      vlLog(`Sending prompt: ${prompt}`);
-      vlSocket.send(JSON.stringify(item));
-      vlSocket.send(JSON.stringify(responseCreate));
-    }
-
-
-    /*************************************************************
-     * Voice Live microphone streaming (PCM16 @ 24kHz)
-     *
-     * Fixes common issues:
-     * - arrayBufferToBase64 was missing (caused ReferenceError)
-     * - mic functions were previously nested inside init() (not reachable from vlConnect)
-     * - avoids speaker feedback by routing mic monitor through a 0-gain node
-     *
-     * Voice Live client events used: input_audio_buffer.append
-     *************************************************************/
-
-    let vlMicStream = null;
-    let vlMicCtx = null;
-    let vlMicSource = null;
-    let vlMicProcessor = null;
-    let vlMicGain = null;
-    let vlMicRunning = false;
 
     function arrayBufferToBase64(buffer) {
       let binary = '';
@@ -1120,6 +943,22 @@ async function stopVoice() {
       return pcm16.buffer;
     }
 
+    function buildVoiceLiveWsUrl(endpoint, apiKey, apiVersion, model) {
+      // endpoint passed from /api/voiceLiveConfig is HTTPS base (e.g., https://<resource>.services.ai.azure.com)
+      const u = new URL(endpoint);
+      const wsOrigin = u.origin.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+      const base = wsOrigin.replace(/\/$/, '');
+
+      // In browser, API key is supplied via query string.
+      const qs = new URLSearchParams({
+        'api-version': apiVersion,
+        model,
+        'api-key': apiKey
+      });
+
+      return `${base}/voice-live/realtime?${qs.toString()}`;
+    }
+
     async function vlStartMicStreaming() {
       if (vlMicRunning) {
         vlLog('Mic already streaming.');
@@ -1130,10 +969,8 @@ async function stopVoice() {
         return;
       }
 
-      // Must be triggered by a user gesture (the Connect button click qualifies)
       vlMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       vlMicCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-
       if (vlMicCtx.state === 'suspended') {
         await vlMicCtx.resume();
       }
@@ -1141,7 +978,7 @@ async function stopVoice() {
       vlMicSource = vlMicCtx.createMediaStreamSource(vlMicStream);
       vlMicProcessor = vlMicCtx.createScriptProcessor(4096, 1, 1);
 
-      // Route to a zero-gain node to avoid acoustic feedback but keep the node alive.
+      // 0 gain: keep node alive without monitoring your mic through speakers
       vlMicGain = vlMicCtx.createGain();
       vlMicGain.gain.value = 0;
 
@@ -1151,10 +988,10 @@ async function stopVoice() {
 
       vlMicProcessor.onaudioprocess = (e) => {
         try {
+          if (vlMicMuted) return;
           if (!vlSocket || vlSocket.readyState !== WebSocket.OPEN) return;
           const input = e.inputBuffer.getChannelData(0);
           const pcm = floatToPCM16(input);
-
           vlSocket.send(JSON.stringify({
             type: 'input_audio_buffer.append',
             audio: arrayBufferToBase64(pcm)
@@ -1165,12 +1002,11 @@ async function stopVoice() {
       };
 
       vlMicRunning = true;
-      vlLog('Mic streaming started (24kHz PCM16).');
+      vlLog('Mic streaming started (24kHz PCM16). Talk normally, pause to get a reply.');
     }
 
     async function vlStopMicStreaming() {
       vlMicRunning = false;
-
       try {
         if (vlMicProcessor) {
           vlMicProcessor.disconnect();
@@ -1196,8 +1032,250 @@ async function stopVoice() {
       } catch (e) {
         console.warn('Mic stop error:', e);
       }
-
       vlLog('Mic streaming stopped.');
+    }
+
+    function vlToggleMute() {
+      vlMicMuted = !vlMicMuted;
+      const btn = document.getElementById('vlMuteBtn');
+      if (btn) btn.textContent = vlMicMuted ? 'Mic: Unmute' : 'Mic: Mute';
+      vlLog(vlMicMuted ? 'Mic muted.' : 'Mic unmuted.');
+    }
+
+    async function vlConnect() {
+      try {
+        if (vlSocket && (vlSocket.readyState === WebSocket.OPEN || vlSocket.readyState === WebSocket.CONNECTING)) {
+          vlLog('Already connected/connecting.');
+          return;
+        }
+
+        const cfgRes = await fetch(VOICE_LIVE_CONFIG_ENDPOINT(), { cache: 'no-store' });
+        if (!cfgRes.ok) {
+          const txt = await cfgRes.text();
+          throw new Error(`voiceLiveConfig failed ${cfgRes.status}: ${txt}`);
+        }
+        const cfg = await cfgRes.json();
+
+        const model = (document.getElementById('vlModel')?.value || 'gpt-realtime').trim();
+        const voiceType = document.getElementById('vlVoiceType')?.value || 'azure-standard';
+        const voiceName = document.getElementById('vlVoiceName')?.value || 'en-AU-NatashaNeural';
+        const locale = document.getElementById('vlLocale')?.value || 'en-AU';
+
+        const wsUrl = buildVoiceLiveWsUrl(cfg.endpoint, cfg.apiKey, cfg.apiVersion || '2025-10-01', model);
+        vlLog(`Connecting Voice Live WS: ${wsUrl.replace(cfg.apiKey, '***')}`);
+
+        // Prepare audio output chain (must be after user gesture in some browsers)
+        vlEnsureAudioOutput(24000);
+        if (vlAudioCtx && vlAudioCtx.state === 'suspended') {
+          await vlAudioCtx.resume();
+        }
+
+        vlSessionReady = false;
+        vlIsResponding = false;
+        vlPcmQueue = [];
+        vlMicMuted = false;
+        const btn = document.getElementById('vlMuteBtn');
+        if (btn) btn.textContent = 'Mic: Mute';
+
+        vlSocket = new WebSocket(wsUrl);
+
+        vlSocket.onopen = async () => {
+          vlLog('WS open. Sending session.update (audio-only + VAD + en-AU transcription)');
+
+          const sessionUpdate = {
+            type: 'session.update',
+            session: {
+              modalities: ['audio'],
+              voice: { type: voiceType, name: voiceName },
+              input_audio_format: 'pcm16',
+              output_audio_format: 'pcm16',
+              input_audio_sampling_rate: 24000,
+
+              // Lock transcription language — en-AU recommended if available.
+              input_audio_transcription: {
+                model: 'azure-speech',
+                language: locale
+              },
+
+              // Server-side semantic VAD for natural turn-taking
+              turn_detection: {
+                type: 'azure_semantic_vad',
+                threshold: 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 600
+              },
+
+              instructions: 'You are a helpful assistant. Respond naturally, in Australian English when possible.'
+            }
+          };
+
+          vlSocket.send(JSON.stringify(sessionUpdate));
+
+          // Start mic streaming (Connect click is a user gesture)
+          await vlStartMicStreaming();
+        };
+
+        vlSocket.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data);
+
+            // Session lifecycle
+            if (msg.type === 'session.created' || msg.type === 'session.updated') {
+              vlSessionReady = true;
+              vlLog(`${msg.type} (session ready)`);
+              return;
+            }
+
+            if (msg.type === 'response.created') {
+              vlIsResponding = true;
+              return;
+            }
+
+            if (msg.type === 'response.done') {
+              vlIsResponding = false;
+              vlLog('response.done');
+              return;
+            }
+
+            // Errors
+            if (msg.type === 'error') {
+              vlLog(`ERROR: ${msg.error?.message || JSON.stringify(msg.error)}`);
+              return;
+            }
+
+            // Server VAD events (speech started/stopped)
+            if (msg.type === 'input_audio_buffer.speech_started') {
+              vlLog('VAD: speech_started');
+              // Barge-in: stop current response if speaking while it talks
+              if (vlIsResponding) {
+                vlSocket.send(JSON.stringify({ type: 'response.cancel' }));
+                vlIsResponding = false;
+                vlLog('Barge-in: response.cancel sent');
+              }
+              return;
+            }
+
+            if (msg.type === 'input_audio_buffer.speech_stopped') {
+              vlLog('VAD: speech_stopped → requesting response');
+
+              // Ask for an audio reply (audio-only)
+              const voiceTypeNow = document.getElementById('vlVoiceType')?.value || 'azure-standard';
+              const voiceNameNow = document.getElementById('vlVoiceName')?.value || 'en-AU-NatashaNeural';
+
+              vlSocket.send(JSON.stringify({
+                type: 'response.create',
+                response: {
+                  modalities: ['audio'],
+                  voice: { type: voiceTypeNow, name: voiceNameNow }
+                }
+              }));
+
+              return;
+            }
+
+            // Streamed audio output (PCM16 base64)
+            if (msg.type === 'response.audio.delta' && msg.delta) {
+              const bytes = base64ToUint8(msg.delta);
+              const floats = pcm16ToFloat32(bytes);
+              for (let i = 0; i < floats.length; i++) vlPcmQueue.push(floats[i]);
+              return;
+            }
+
+            // Optional: show text deltas if the service sends them (some configs don't)
+            if (msg.type === 'response.text.delta' && msg.delta) {
+              vlLog(`TEXTΔ: ${msg.delta}`);
+              return;
+            }
+
+            // Optional: show input transcription (if enabled)
+            if (msg.type === 'conversation.item.input_audio_transcription.delta' && msg.delta) {
+              vlLog(`YOUΔ: ${msg.delta}`);
+              return;
+            }
+
+            if (msg.type === 'conversation.item.input_audio_transcription.completed' && msg.transcript) {
+              vlLog(`YOU: ${msg.transcript}`);
+              return;
+            }
+
+          } catch (e) {
+            vlLog(`WS message (non-JSON): ${String(evt.data).slice(0, 140)}`);
+          }
+        };
+
+        vlSocket.onerror = (e) => {
+          vlLog('WS error (see console)');
+          console.error('VoiceLive WS error:', e);
+        };
+
+        vlSocket.onclose = () => {
+          vlLog('WS closed');
+          vlSessionReady = false;
+          vlIsResponding = false;
+          vlSocket = null;
+          vlStopMicStreaming().catch(() => {});
+        };
+
+      } catch (e) {
+        vlLog(`Connect error: ${e.message}`);
+        console.error(e);
+      }
+    }
+
+    function vlDisconnect() {
+      try {
+        vlStopMicStreaming().catch(() => {});
+        if (vlSocket) {
+          vlSocket.close();
+          vlSocket = null;
+        }
+        vlSessionReady = false;
+        vlIsResponding = false;
+        vlLog('Disconnected.');
+      } catch (e) {
+        vlLog(`Disconnect error: ${e.message}`);
+      }
+    }
+
+    function vlSpeakText() {
+      if (!vlSocket || vlSocket.readyState !== WebSocket.OPEN) {
+        vlLog('Not connected. Click Voice Live: Connect + Mic first.');
+        return;
+      }
+      if (!vlSessionReady) {
+        vlLog('Session not ready yet. Wait for session.updated.');
+        return;
+      }
+
+      const prompt = (document.getElementById('vlPrompt')?.value || '').trim();
+      if (!prompt) {
+        vlLog('Type something in the box to test text→audio. For live, just talk.');
+        return;
+      }
+
+      const item = {
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: prompt }]
+        }
+      };
+
+      const voiceType = document.getElementById('vlVoiceType')?.value || 'azure-standard';
+      const voiceName = document.getElementById('vlVoiceName')?.value || 'en-AU-NatashaNeural';
+
+      const responseCreate = {
+        type: 'response.create',
+        response: {
+          modalities: ['audio'],
+          voice: { type: voiceType, name: voiceName }
+        }
+      };
+
+      vlLog(`Sending text prompt: ${prompt}`);
+      vlSocket.send(JSON.stringify(item));
+      vlSocket.send(JSON.stringify(responseCreate));
     }
 /*************************************************************
      * Init
@@ -1240,18 +1318,15 @@ async function stopVoice() {
         try { await speakBotReply("Hello! This is the Wild Tech avatar speaking."); } catch (e) {}
       });
 
-      // Voice Live test buttons
+      // Voice Live buttons
       document.getElementById('vlHealthBtn').addEventListener('click', vlHealth);
       document.getElementById('vlConfigBtn').addEventListener('click', vlConfig);
-      document.getElementById('vlConnectBtn').addEventListener('click', vlConnect);
-      document.getElementById('vlSpeakBtn').addEventListener('click', () => {
-        // Needs user gesture for audio in some browsers
-        if (vlAudioCtx && vlAudioCtx.state === 'suspended') {
-          vlAudioCtx.resume().finally(vlSpeak);
-        } else {
-          vlSpeak();
-        }
+      document.getElementById('vlConnectBtn').addEventListener('click', () => {
+        // Connect button is a user gesture; good place to start audio contexts.
+        vlConnect();
       });
+      document.getElementById('vlMuteBtn').addEventListener('click', vlToggleMute);
+      document.getElementById('vlSpeakBtn').addEventListener('click', vlSpeakText);
       document.getElementById('vlDisconnectBtn').addEventListener('click', vlDisconnect);
 
 
