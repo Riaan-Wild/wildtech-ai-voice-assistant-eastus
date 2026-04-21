@@ -950,16 +950,27 @@ async function stopVoice() {
           vlLog('WS open. Sending session.update');
 
           const sessionUpdate = {
-            type: 'session.update',
-            session: {
-              modalities: ['audio'],
-              voice: { type: voiceType, name: voiceName },
-              input_audio_format: 'pcm16',
-              output_audio_format: 'pcm16',
-              input_audio_sampling_rate: 24000,
-              instructions: 'You are a helpful assistant. Keep responses concise.'
-            }
-          };
+  type: "session.update",
+  session: {
+    modalities: ["audio"],
+    voice: { type: voiceType, name: voiceName },
+
+    input_audio_format: "pcm16",
+    input_audio_sampling_rate: 24000,
+    output_audio_format: "pcm16",
+
+    //THIS enables natural turn-taking
+    turn_detection: {
+      type: "azure_semantic_vad",
+      threshold: 0.5,
+      prefix_padding_ms: 300,
+      silence_duration_ms: 600
+    },
+
+    instructions: "You are a helpful assistant. Respond naturally."
+  }
+};
+
           vlSocket.send(JSON.stringify(sessionUpdate));
         };
 
@@ -1122,6 +1133,44 @@ async function stopVoice() {
       });
       document.getElementById('vlDisconnectBtn').addEventListener('click', vlDisconnect);
 
+      //PCM16 Helper
+      
+function floatToPCM16(float32) {
+  const pcm16 = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    pcm16[i] = Math.max(-1, Math.min(1, float32[i])) * 0x7fff;
+  }
+  return pcm16.buffer;
+}
+
+      //Mic Stream
+let vlMicStream, vlProcessor;
+
+async function startVoiceLiveMic() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const ctx = new AudioContext({ sampleRate: 24000 });
+
+  const source = ctx.createMediaStreamSource(stream);
+  const processor = ctx.createScriptProcessor(4096, 1, 1);
+
+  source.connect(processor);
+  processor.connect(ctx.destination);
+
+  processor.onaudioprocess = (e) => {
+    const input = e.inputBuffer.getChannelData(0);
+    const pcm = floatToPCM16(input);
+
+    if (vlSocket?.readyState === WebSocket.OPEN) {
+      vlSocket.send(JSON.stringify({
+        type: "input_audio_buffer.append",
+        audio: arrayBufferToBase64(pcm)
+      }));
+    }
+  };
+
+  vlMicStream = stream;
+  vlProcessor = processor;
+}
 
       // ALWAYS LISTENING: start voice after first user gesture (required for mic/audio in many browsers). [2](https://github.com/microsoft/BotFramework-WebChat/blob/main/docs/SPEECH.md)
       const startOnce = async () => {
