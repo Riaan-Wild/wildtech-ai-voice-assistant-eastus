@@ -374,6 +374,33 @@
               <button class="btn danger" id="stopAvatarBtn">Stop Avatar</button>
               <button class="btn" id="testAvatarBtn">Test “Hello”</button>
             </div>
+
+            <!-- Voice Live test panel (uses your new /api/voiceLiveHealth + /api/voiceLiveConfig functions) -->
+            <div class="row" style="margin-top:6px;">
+              <button class="btn" id="vlHealthBtn" title="Call /api/voiceLiveHealth">Voice Live: Health</button>
+              <button class="btn" id="vlConfigBtn" title="Call /api/voiceLiveConfig">Voice Live: Config</button>
+              <button class="btn primary" id="vlConnectBtn" title="Open Voice Live WebSocket">Voice Live: Connect</button>
+              <button class="btn" id="vlSpeakBtn" title="Send a text prompt to Voice Live and play audio">Voice Live: Speak</button>
+              <button class="btn danger" id="vlDisconnectBtn" title="Close Voice Live WebSocket">Voice Live: Disconnect</button>
+            </div>
+
+            <div class="row" style="margin-top:4px;">
+              <select class="select" id="vlVoiceType" title="Voice Live voice type">
+                <option value="openai" selected>openai</option>
+                <option value="azure-standard">azure-standard</option>
+              </select>
+              <select class="select" id="vlVoiceName" title="Voice Live voice name">
+                <option value="alloy" selected>alloy</option>
+                <option value="en-US-AvaMultilingualNeural">en-US-AvaMultilingualNeural</option>
+              </select>
+              <input class="select" id="vlModel" value="gpt-realtime" style="min-width:180px;" title="Voice Live model (query param)" />
+            </div>
+
+            <div style="margin-top:6px;">
+              <textarea id="vlPrompt" rows="2" style="width:100%; resize:vertical; padding:10px; border:1px solid rgba(15,23,42,0.12); border-radius:12px; font-size:12px;" placeholder="Voice Live test prompt (e.g., Say hello in one sentence)"></textarea>
+              <div id="vlLog" style="margin-top:6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:11px; color:#0f172a; background:#f3f4f6; border:1px solid rgba(15,23,42,0.10); border-radius:12px; padding:10px; max-height:120px; overflow:auto; white-space:pre-wrap;"></div>
+            </div>
+
           </div>
         </div>
 
@@ -395,6 +422,21 @@
 
     const AVATAR_RELAY_TOKEN_ENDPOINT =
       "https://wt-ai-voice-api-d6cxdvaubghtf0gt.eastus-01.azurewebsites.net/api/avatarRelay";
+
+    // Voice Live test endpoints (Azure Functions). If these functions are deployed to the SAME Function App
+    // as speechToken/avatarRelay, you can leave VOICE_LIVE_BASE empty and we will auto-derive it.
+    // If Voice Live functions are in a different Function App, set VOICE_LIVE_BASE to that app origin.
+    const VOICE_LIVE_BASE = ""; // e.g. "https://<your-voicelive-funcapp>.azurewebsites.net"
+
+    function getVoiceLiveApiBase() {
+      // default: same origin as SPEECH_TOKEN_ENDPOINT (".../api/speechToken")
+      const derived = new URL(SPEECH_TOKEN_ENDPOINT).origin;
+      return VOICE_LIVE_BASE ? VOICE_LIVE_BASE : derived;
+    }
+
+    const VOICE_LIVE_HEALTH_ENDPOINT = () => `${getVoiceLiveApiBase()}/api/voiceLiveHealth`;
+    const VOICE_LIVE_CONFIG_ENDPOINT = () => `${getVoiceLiveApiBase()}/api/voiceLiveConfig`;
+
 
     const DEFAULT_SPEECH_LOCALE = "en-US";
     const DEFAULT_TTS_VOICE = "en-US-AvaMultilingualNeural";
@@ -781,7 +823,249 @@ async function stopVoice() {
       renderWebChat(directLine);
     }
 
+    
+
     /*************************************************************
+     * Voice Live (WebSocket) test client
+     * Uses Voice Live API WebSocket endpoint + event protocol.
+     * WebSocket endpoint format and api-key query support are documented in Microsoft Learn.
+     *************************************************************/
+
+    let vlSocket = null;
+    let vlSessionReady = false;
+    let vlAudioCtx = null;
+    let vlScriptNode = null;
+    let vlPcmQueue = []; // Float32 samples
+
+    function vlLog(line) {
+      const el = document.getElementById('vlLog');
+      if (!el) return;
+      const ts = new Date().toLocaleTimeString();
+      el.textContent = `[${ts}] ${line}\n` + el.textContent;
+    }
+
+    async function vlHealth() {
+      try {
+        const r = await fetch(VOICE_LIVE_HEALTH_ENDPOINT(), { cache: 'no-store' });
+        const t = await r.text();
+        vlLog(`Health ${r.status}: ${t}`);
+      } catch (e) {
+        vlLog(`Health error: ${e.message}`);
+      }
+    }
+
+    async function vlConfig() {
+      try {
+        const r = await fetch(VOICE_LIVE_CONFIG_ENDPOINT(), { cache: 'no-store' });
+        const t = await r.text();
+        vlLog(`Config ${r.status}: ${t}`);
+      } catch (e) {
+        vlLog(`Config error: ${e.message}`);
+      }
+    }
+
+    function vlEnsureAudioOutput(sampleRate = 24000) {
+      if (vlAudioCtx) return;
+      vlAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
+
+      // ScriptProcessorNode is deprecated but works widely and is fine for a test harness.
+      vlScriptNode = vlAudioCtx.createScriptProcessor(4096, 0, 1);
+      vlScriptNode.onaudioprocess = (e) => {
+        const out = e.outputBuffer.getChannelData(0);
+        for (let i = 0; i < out.length; i++) {
+          out[i] = vlPcmQueue.length ? vlPcmQueue.shift() : 0;
+        }
+      };
+      vlScriptNode.connect(vlAudioCtx.destination);
+    }
+
+    function base64ToUint8(b64) {
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    }
+
+    function pcm16ToFloat32(uint8) {
+      // little-endian PCM16
+      const view = new DataView(uint8.buffer, uint8.byteOffset, uint8.byteLength);
+      const floats = new Float32Array(uint8.byteLength / 2);
+      for (let i = 0; i < floats.length; i++) {
+        const s = view.getInt16(i * 2, true);
+        floats[i] = Math.max(-1, Math.min(1, s / 32768));
+      }
+      return floats;
+    }
+
+    function buildVoiceLiveWsUrl(endpoint, apiKey, apiVersion, model) {
+      // Per Microsoft Learn: wss://<resource>.services.ai.azure.com/voice-live/realtime?api-version=...&model=...
+      // Older resources can use cognitiveservices.azure.com host.
+      // API key can be supplied via query string in browser environments.
+      const u = new URL(endpoint);
+      const wsOrigin = u.origin.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+      const base = wsOrigin.replace(/\/$/, '');
+      const qs = new URLSearchParams({
+        'api-version': apiVersion,
+        model,
+        'api-key': apiKey
+      });
+      return `${base}/voice-live/realtime?${qs.toString()}`;
+    }
+
+    async function vlConnect() {
+      try {
+        if (vlSocket && (vlSocket.readyState === WebSocket.OPEN || vlSocket.readyState === WebSocket.CONNECTING)) {
+          vlLog('Already connected/connecting.');
+          return;
+        }
+
+        const cfgRes = await fetch(VOICE_LIVE_CONFIG_ENDPOINT(), { cache: 'no-store' });
+        if (!cfgRes.ok) {
+          const txt = await cfgRes.text();
+          throw new Error(`voiceLiveConfig failed ${cfgRes.status}: ${txt}`);
+        }
+        const cfg = await cfgRes.json();
+
+        const model = (document.getElementById('vlModel')?.value || 'gpt-realtime').trim();
+        const voiceType = document.getElementById('vlVoiceType')?.value || 'openai';
+        const voiceName = document.getElementById('vlVoiceName')?.value || 'alloy';
+
+        const wsUrl = buildVoiceLiveWsUrl(cfg.endpoint, cfg.apiKey, cfg.apiVersion || '2025-10-01', model);
+        vlLog(`Connecting WS: ${wsUrl.replace(cfg.apiKey, '***')}`);
+
+        // Ensure audio output chain is ready (must be after user gesture in some browsers).
+        vlEnsureAudioOutput(24000);
+        if (vlAudioCtx && vlAudioCtx.state === 'suspended') {
+          await vlAudioCtx.resume();
+        }
+
+        vlSessionReady = false;
+        vlPcmQueue = [];
+
+        vlSocket = new WebSocket(wsUrl);
+
+        vlSocket.onopen = () => {
+          vlLog('WS open. Sending session.update');
+
+          const sessionUpdate = {
+            type: 'session.update',
+            session: {
+              modalities: ['text', 'audio'],
+              voice: { type: voiceType, name: voiceName },
+              input_audio_format: 'pcm16',
+              output_audio_format: 'pcm16',
+              input_audio_sampling_rate: 24000,
+              instructions: 'You are a helpful assistant. Keep responses concise.'
+            }
+          };
+          vlSocket.send(JSON.stringify(sessionUpdate));
+        };
+
+        vlSocket.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data);
+
+            if (msg.type === 'session.created' || msg.type === 'session.updated') {
+              vlSessionReady = true;
+              vlLog(`${msg.type} (session ready)`);
+              return;
+            }
+
+            if (msg.type === 'error') {
+              vlLog(`ERROR: ${msg.error?.message || JSON.stringify(msg.error)}`);
+              return;
+            }
+
+            // Streamed audio chunks (base64 pcm16)
+            if (msg.type === 'response.audio.delta' && msg.delta) {
+              const bytes = base64ToUint8(msg.delta);
+              const floats = pcm16ToFloat32(bytes);
+              // enqueue
+              for (let i = 0; i < floats.length; i++) vlPcmQueue.push(floats[i]);
+              return;
+            }
+
+            // Streamed text
+            if (msg.type === 'response.text.delta' && msg.delta) {
+              vlLog(`TEXTΔ: ${msg.delta}`);
+              return;
+            }
+
+            if (msg.type === 'response.done') {
+              vlLog('response.done');
+              return;
+            }
+
+          } catch (e) {
+            // non-JSON message
+            vlLog(`WS message (non-JSON): ${String(evt.data).slice(0, 120)}`);
+          }
+        };
+
+        vlSocket.onerror = (e) => {
+          vlLog('WS error (see console)');
+          console.error('VoiceLive WS error:', e);
+        };
+
+        vlSocket.onclose = () => {
+          vlLog('WS closed');
+          vlSessionReady = false;
+          vlSocket = null;
+        };
+
+      } catch (e) {
+        vlLog(`Connect error: ${e.message}`);
+        console.error(e);
+      }
+    }
+
+    function vlDisconnect() {
+      try {
+        if (vlSocket) {
+          vlSocket.close();
+          vlSocket = null;
+        }
+        vlSessionReady = false;
+        vlLog('Disconnected.');
+      } catch (e) {
+        vlLog(`Disconnect error: ${e.message}`);
+      }
+    }
+
+    function vlSpeak() {
+      if (!vlSocket || vlSocket.readyState !== WebSocket.OPEN) {
+        vlLog('Not connected. Click Voice Live: Connect first.');
+        return;
+      }
+      if (!vlSessionReady) {
+        vlLog('Session not ready yet. Wait for session.updated.');
+        return;
+      }
+
+      const prompt = (document.getElementById('vlPrompt')?.value || 'Say hello in one sentence.').trim();
+      if (!prompt) return;
+
+      const item = {
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: prompt }]
+        }
+      };
+
+      const responseCreate = {
+        type: 'response.create',
+        response: {
+          modalities: ['text', 'audio']
+        }
+      };
+
+      vlLog(`Sending prompt: ${prompt}`);
+      vlSocket.send(JSON.stringify(item));
+      vlSocket.send(JSON.stringify(responseCreate));
+    }
+/*************************************************************
      * Init
      *************************************************************/
     async function init() {
@@ -821,6 +1105,21 @@ async function stopVoice() {
       document.getElementById("testAvatarBtn").addEventListener("click", async () => {
         try { await speakBotReply("Hello! This is the Wild Tech avatar speaking."); } catch (e) {}
       });
+
+      // Voice Live test buttons
+      document.getElementById('vlHealthBtn').addEventListener('click', vlHealth);
+      document.getElementById('vlConfigBtn').addEventListener('click', vlConfig);
+      document.getElementById('vlConnectBtn').addEventListener('click', vlConnect);
+      document.getElementById('vlSpeakBtn').addEventListener('click', () => {
+        // Needs user gesture for audio in some browsers
+        if (vlAudioCtx && vlAudioCtx.state === 'suspended') {
+          vlAudioCtx.resume().finally(vlSpeak);
+        } else {
+          vlSpeak();
+        }
+      });
+      document.getElementById('vlDisconnectBtn').addEventListener('click', vlDisconnect);
+
 
       // ALWAYS LISTENING: start voice after first user gesture (required for mic/audio in many browsers). [2](https://github.com/microsoft/BotFramework-WebChat/blob/main/docs/SPEECH.md)
       const startOnce = async () => {
