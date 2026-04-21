@@ -972,6 +972,8 @@ async function stopVoice() {
 };
 
           vlSocket.send(JSON.stringify(sessionUpdate));
+          // Start live mic streaming for voice-to-voice testing
+          vlStartMicStreaming().catch(e => vlLog('Mic start error: ' + e.message));
         };
 
         vlSocket.onmessage = (evt) => {
@@ -1038,6 +1040,7 @@ async function stopVoice() {
           vlSocket.close();
           vlSocket = null;
         }
+        vlStopMicStreaming().catch(() => {});
         vlSessionReady = false;
         vlLog('Disconnected.');
       } catch (e) {
@@ -1077,6 +1080,124 @@ async function stopVoice() {
       vlLog(`Sending prompt: ${prompt}`);
       vlSocket.send(JSON.stringify(item));
       vlSocket.send(JSON.stringify(responseCreate));
+    }
+
+
+    /*************************************************************
+     * Voice Live microphone streaming (PCM16 @ 24kHz)
+     *
+     * Fixes common issues:
+     * - arrayBufferToBase64 was missing (caused ReferenceError)
+     * - mic functions were previously nested inside init() (not reachable from vlConnect)
+     * - avoids speaker feedback by routing mic monitor through a 0-gain node
+     *
+     * Voice Live client events used: input_audio_buffer.append
+     *************************************************************/
+
+    let vlMicStream = null;
+    let vlMicCtx = null;
+    let vlMicSource = null;
+    let vlMicProcessor = null;
+    let vlMicGain = null;
+    let vlMicRunning = false;
+
+    function arrayBufferToBase64(buffer) {
+      let binary = '';
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+      }
+      return btoa(binary);
+    }
+
+    function floatToPCM16(float32Array) {
+      const pcm16 = new Int16Array(float32Array.length);
+      for (let i = 0; i < float32Array.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32Array[i]));
+        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      return pcm16.buffer;
+    }
+
+    async function vlStartMicStreaming() {
+      if (vlMicRunning) {
+        vlLog('Mic already streaming.');
+        return;
+      }
+      if (!vlSocket || vlSocket.readyState !== WebSocket.OPEN) {
+        vlLog('Mic start: Voice Live WebSocket not connected.');
+        return;
+      }
+
+      // Must be triggered by a user gesture (the Connect button click qualifies)
+      vlMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      vlMicCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+
+      if (vlMicCtx.state === 'suspended') {
+        await vlMicCtx.resume();
+      }
+
+      vlMicSource = vlMicCtx.createMediaStreamSource(vlMicStream);
+      vlMicProcessor = vlMicCtx.createScriptProcessor(4096, 1, 1);
+
+      // Route to a zero-gain node to avoid acoustic feedback but keep the node alive.
+      vlMicGain = vlMicCtx.createGain();
+      vlMicGain.gain.value = 0;
+
+      vlMicSource.connect(vlMicProcessor);
+      vlMicProcessor.connect(vlMicGain);
+      vlMicGain.connect(vlMicCtx.destination);
+
+      vlMicProcessor.onaudioprocess = (e) => {
+        try {
+          if (!vlSocket || vlSocket.readyState !== WebSocket.OPEN) return;
+          const input = e.inputBuffer.getChannelData(0);
+          const pcm = floatToPCM16(input);
+
+          vlSocket.send(JSON.stringify({
+            type: 'input_audio_buffer.append',
+            audio: arrayBufferToBase64(pcm)
+          }));
+        } catch (err) {
+          console.warn('Mic audio process error:', err);
+        }
+      };
+
+      vlMicRunning = true;
+      vlLog('Mic streaming started (24kHz PCM16).');
+    }
+
+    async function vlStopMicStreaming() {
+      vlMicRunning = false;
+
+      try {
+        if (vlMicProcessor) {
+          vlMicProcessor.disconnect();
+          vlMicProcessor.onaudioprocess = null;
+          vlMicProcessor = null;
+        }
+        if (vlMicSource) {
+          vlMicSource.disconnect();
+          vlMicSource = null;
+        }
+        if (vlMicGain) {
+          vlMicGain.disconnect();
+          vlMicGain = null;
+        }
+        if (vlMicStream) {
+          vlMicStream.getTracks().forEach(t => t.stop());
+          vlMicStream = null;
+        }
+        if (vlMicCtx) {
+          await vlMicCtx.close();
+          vlMicCtx = null;
+        }
+      } catch (e) {
+        console.warn('Mic stop error:', e);
+      }
+
+      vlLog('Mic streaming stopped.');
     }
 /*************************************************************
      * Init
@@ -1133,44 +1254,6 @@ async function stopVoice() {
       });
       document.getElementById('vlDisconnectBtn').addEventListener('click', vlDisconnect);
 
-      //PCM16 Helper
-      
-function floatToPCM16(float32) {
-  const pcm16 = new Int16Array(float32.length);
-  for (let i = 0; i < float32.length; i++) {
-    pcm16[i] = Math.max(-1, Math.min(1, float32[i])) * 0x7fff;
-  }
-  return pcm16.buffer;
-}
-
-      //Mic Stream
-let vlMicStream, vlProcessor;
-
-async function startVoiceLiveMic() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const ctx = new AudioContext({ sampleRate: 24000 });
-
-  const source = ctx.createMediaStreamSource(stream);
-  const processor = ctx.createScriptProcessor(4096, 1, 1);
-
-  source.connect(processor);
-  processor.connect(ctx.destination);
-
-  processor.onaudioprocess = (e) => {
-    const input = e.inputBuffer.getChannelData(0);
-    const pcm = floatToPCM16(input);
-
-    if (vlSocket?.readyState === WebSocket.OPEN) {
-      vlSocket.send(JSON.stringify({
-        type: "input_audio_buffer.append",
-        audio: arrayBufferToBase64(pcm)
-      }));
-    }
-  };
-
-  vlMicStream = stream;
-  vlProcessor = processor;
-}
 
       // ALWAYS LISTENING: start voice after first user gesture (required for mic/audio in many browsers). [2](https://github.com/microsoft/BotFramework-WebChat/blob/main/docs/SPEECH.md)
       const startOnce = async () => {
