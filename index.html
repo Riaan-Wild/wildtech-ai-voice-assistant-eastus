@@ -952,7 +952,7 @@ async function stopVoice() {
           const sessionUpdate = {
             type: 'session.update',
             session: {
-              modalities: ['text', 'audio'],
+              modalities: ['audio'],
               voice: { type: voiceType, name: voiceName },
               input_audio_format: 'pcm16',
               output_audio_format: 'pcm16',
@@ -1059,7 +1059,7 @@ async function stopVoice() {
       const responseCreate = {
         type: 'response.create',
         response: {
-          modalities: ['text', 'audio']
+          modalities: ['audio']
         }
       };
 
